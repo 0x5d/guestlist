@@ -1,11 +1,12 @@
 mod config;
 
-use config::Config;
+pub use config::Config;
 use std::io::Result;
 use std::net::IpAddr;
 use std::net::UdpSocket;
+use std::thread::{JoinHandle, spawn};
 
-pub struct GuestList {
+pub struct Guestlist {
     config: Config,
     nodes: Vec<Node>
 }
@@ -23,11 +24,38 @@ enum State {
     Failed,
 }
 
-impl GuestList {
+impl Guestlist {
 
-    pub fn start(self) -> Result<()> {
+    pub fn with_config(config: Config) -> Guestlist {
+        let mut nodes = Vec::new(); 
+        Guestlist {
+            config: config,
+            nodes: nodes
+        }
+    }
+
+    pub fn start(self) -> Result<JoinHandle<String>> {
         let addr = format!("{}:{}", self.config.address, self.config.port);
         let socket = UdpSocket::bind(&addr)?;
-        return Ok(());
+
+        let handle = spawn(move || {
+            let mut buf = [0; 1000];
+
+            loop {
+                let (number_of_bytes, src_addr) = socket.recv_from(&mut buf)
+                    .expect("Didn't receive data");
+                let msg = String::from_utf8(buf[0 .. number_of_bytes].to_vec());
+
+                match msg {
+                    Ok(m) => match m.as_ref() {
+                        "ping" => socket.send_to("alive".as_bytes(), src_addr),
+                        "join" => socket.send_to("joined".as_bytes(), src_addr),
+                        _ => continue,
+                    },
+                    Err(_) => continue,
+                };
+            }
+        });
+        return Ok((handle));
     }
 }

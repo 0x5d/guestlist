@@ -1,7 +1,10 @@
+
+use std::net::IpAddr;
+
 /// Configuration for a Guestlist instance.
 pub struct Config {
     // The address to bind on
-    pub address: String,
+    pub address: IpAddr,
     // The port to listen on
     pub port: String,
     // The time to wait between failure detection "rounds"
