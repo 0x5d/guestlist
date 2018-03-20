@@ -89,6 +89,6 @@ impl Guestlist {
                 };
             }
         });
-        return Ok((handle));
+        return Ok(handle);
     }
 }
