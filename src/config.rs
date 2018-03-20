@@ -1,4 +1,3 @@
-
 use std::net::IpAddr;
 
 /// Configuration for a Guestlist instance.

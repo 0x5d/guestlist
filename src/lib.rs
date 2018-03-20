@@ -1,20 +1,28 @@
 mod config;
 
 pub use config::Config;
+use std::fmt;
 use std::io::Result;
-use std::net::IpAddr;
-use std::net::UdpSocket;
-use std::thread::{JoinHandle, spawn};
+use std::net::{IpAddr, UdpSocket};
+use std::thread::{spawn, JoinHandle};
 
 pub struct Guestlist {
     config: Config,
-    nodes: Vec<Node>
+    nodes: Vec<Node>,
 }
 
 /// Represents a Node in the cluster.
+#[derive(Debug)]
 pub struct Node {
-    addr: IpAddr,
+    address: IpAddr,
+    port: String,
     state: State,
+}
+
+impl fmt::Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {} {}", self.address, self.port, self.state)
+    }
 }
 
 /// A Node's possible states.
@@ -24,17 +32,37 @@ enum State {
     Failed,
 }
 
-impl Guestlist {
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            &State::Alive => "alive",
+            &State::Suspected => "suspected",
+            &State::Failed => "failed",
+        };
+        write!(f, "{}", s)
+    }
+}
+impl fmt::Debug for State {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (self as &fmt::Display).fmt(f)
+    }
+}
 
+impl Guestlist {
     pub fn with_config(config: Config) -> Guestlist {
-        let mut nodes = Vec::new(); 
+        let this_node = Node {
+            address: config.address,
+            port: config.port.clone(),
+            state: State::Alive,
+        };
+        let nodes = vec![this_node];
         Guestlist {
             config: config,
-            nodes: nodes
+            nodes: nodes,
         }
     }
 
-    pub fn start(self) -> Result<JoinHandle<String>> {
+    pub fn start(self) -> Result<JoinHandle<()>> {
         let addr = format!("{}:{}", self.config.address, self.config.port);
         let socket = UdpSocket::bind(&addr)?;
 
@@ -42,16 +70,21 @@ impl Guestlist {
             let mut buf = [0; 1000];
 
             loop {
-                let (number_of_bytes, src_addr) = socket.recv_from(&mut buf)
-                    .expect("Didn't receive data");
-                let msg = String::from_utf8(buf[0 .. number_of_bytes].to_vec());
+                let (number_of_bytes, src_addr) =
+                    socket.recv_from(&mut buf).expect("Didn't receive data");
+                let msg = String::from_utf8(buf[0..number_of_bytes].to_vec());
 
                 match msg {
-                    Ok(m) => match m.as_ref() {
-                        "ping" => socket.send_to("alive".as_bytes(), src_addr),
-                        "join" => socket.send_to("joined".as_bytes(), src_addr),
-                        _ => continue,
-                    },
+                    Ok(m) => {
+                        let trimmed = m.trim();
+                        let nodes_str = format!("{:?}", &self.nodes);
+                        let reply = match trimmed.as_ref() {
+                            "ping" => "alive",
+                            "join" => nodes_str.as_ref(),
+                            _ => continue,
+                        };
+                        socket.send_to(reply.as_bytes(), src_addr);
+                    }
                     Err(_) => continue,
                 };
             }
