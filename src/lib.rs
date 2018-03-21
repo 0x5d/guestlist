@@ -1,6 +1,7 @@
 mod config;
 
 pub use config::Config;
+use std::collections::HashMap;
 use std::fmt;
 use std::io::Result;
 use std::net::{IpAddr, UdpSocket};
@@ -8,7 +9,8 @@ use std::thread::{spawn, JoinHandle};
 
 pub struct Guestlist {
     config: Config,
-    nodes: Vec<Node>,
+    // A map where the key is the address <ip>:<port> and the value is a Node.
+    nodes: HashMap<String, Node>,
 }
 
 /// Represents a Node in the cluster.
@@ -55,7 +57,8 @@ impl Guestlist {
             port: config.port.clone(),
             state: State::Alive,
         };
-        let nodes = vec![this_node];
+        let mut nodes = HashMap::new();
+        nodes.insert(Guestlist::format_addr(&config.address, &config.port), this_node);
         Guestlist {
             config: config,
             nodes: nodes,
@@ -77,7 +80,7 @@ impl Guestlist {
                 match msg {
                     Ok(m) => {
                         let trimmed = m.trim();
-                        let nodes_str = format!("{:?}", &self.nodes);
+                        let nodes_str = format!("{:?}", &self.nodes.values());
                         let reply = match trimmed.as_ref() {
                             "ping" => "alive",
                             "join" => nodes_str.as_ref(),
@@ -90,5 +93,9 @@ impl Guestlist {
             }
         });
         return Ok(handle);
+    }
+
+    fn format_addr(ip: &IpAddr, port: &str) -> String {
+        format!("{}:{}", ip, port)
     }
 }
