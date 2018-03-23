@@ -51,14 +51,13 @@ impl Guestlist {
     pub fn with_config(config: Config) -> Guestlist {
         Guestlist {
             config: config,
-            nodes: Vec::new(),
+            nodes: HashMap::new(),
         }
     }
 
     pub fn start(self) -> Result<JoinHandle<()>> {
         let addr = format!("{}", self.config.address);
         let socket = UdpSocket::bind(&addr)?;
-
 
         let handle = spawn(move || {
             let mut buf = [0; 1000];
@@ -84,9 +83,5 @@ impl Guestlist {
             }
         });
         return Ok(handle);
-    }
-
-    fn format_addr(ip: &IpAddr, port: &str) -> String {
-        format!("{}:{}", ip, port)
     }
 }
