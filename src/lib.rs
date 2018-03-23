@@ -28,8 +28,7 @@ impl fmt::Display for Node {
 /// A Node's possible states.
 enum State {
     Alive,
-    Suspected,
-    Failed,
+    Suspected
 }
 
 impl fmt::Display for State {
@@ -37,7 +36,6 @@ impl fmt::Display for State {
         let s = match self {
             &State::Alive => "alive",
             &State::Suspected => "suspected",
-            &State::Failed => "failed",
         };
         write!(f, "{}", s)
     }
