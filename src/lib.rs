@@ -3,7 +3,7 @@ mod config;
 pub use config::Config;
 use std::fmt;
 use std::io::Result;
-use std::net::{IpAddr, UdpSocket};
+use std::net::{SocketAddr, UdpSocket};
 use std::thread::{spawn, JoinHandle};
 
 pub struct Guestlist {
@@ -14,14 +14,13 @@ pub struct Guestlist {
 /// Represents a Node in the cluster.
 #[derive(Debug)]
 pub struct Node {
-    address: IpAddr,
-    port: String,
+    address: SocketAddr,
     state: State,
 }
 
 impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {} {}", self.address, self.port, self.state)
+        write!(f, "{} {}", self.address, self.state)
     }
 }
 
@@ -48,21 +47,16 @@ impl fmt::Debug for State {
 
 impl Guestlist {
     pub fn with_config(config: Config) -> Guestlist {
-        let this_node = Node {
-            address: config.address,
-            port: config.port.clone(),
-            state: State::Alive,
-        };
-        let nodes = vec![this_node];
         Guestlist {
             config: config,
-            nodes: nodes,
+            nodes: Vec::new(),
         }
     }
 
     pub fn start(self) -> Result<JoinHandle<()>> {
-        let addr = format!("{}:{}", self.config.address, self.config.port);
+        let addr = format!("{}", self.config.address);
         let socket = UdpSocket::bind(&addr)?;
+
 
         let handle = spawn(move || {
             let mut buf = [0; 1000];

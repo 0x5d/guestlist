@@ -1,12 +1,11 @@
 extern crate guestlist;
 
 use guestlist::*;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 fn main() {
     let config = Config {
-        address: IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-        port: "3000".to_owned(),
+        address: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 3000),
         detection_period_ms: 0.0,
         detection_ping_timeout: 0.0,
         detection_group_size: 0,
