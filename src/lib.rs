@@ -64,39 +64,41 @@ impl Guestlist {
         let this = Arc::new(self);
         let this_server = Arc::clone(&this);
 
-        spawn(move || loop {
-            this.ping();
-            let config = this.config.lock().unwrap();
-            sleep(Duration::from_millis(config.detection_period_ms));
-        });
+        spawn(move || this.schedule_pings());
 
-        let handle = spawn(move || {
-            let mut buf = [0; 1000];
-
-            loop {
-                let (number_of_bytes, src_addr) = 
-                    socket.recv_from(&mut buf).expect("Didn't receive data");
-                let msg = String::from_utf8(buf[0..number_of_bytes].to_vec());
-
-                match msg {
-                    Ok(m) => {
-                        let trimmed = m.trim();
-                        let nodes_str = format!("{:?}", &this_server.nodes.values());
-                        let reply = match trimmed.as_ref() {
-                            "ping" => "alive",
-                            "join" => nodes_str.as_ref(),
-                            _ => continue,
-                        };
-                        socket.send_to(reply.as_bytes(), src_addr);
-                    }
-                    Err(_) => continue,
-                };
-            }
-        });
+        let handle = spawn(move || this_server.run_server(socket));
         return Ok(handle);
     }
 
-    fn ping(&self) {
-        println!("ping")
+    fn schedule_pings(&self) {
+        loop {
+            println!("ping");
+            let config = self.config.lock().unwrap();
+            sleep(Duration::from_millis(config.detection_period_ms));
+        }
+    }
+
+    fn run_server(&self, socket: UdpSocket) {
+        let mut buf = [0; 1000];
+
+        loop {
+            let (number_of_bytes, src_addr) = 
+                socket.recv_from(&mut buf).expect("Didn't receive data");
+            let msg = String::from_utf8(buf[0..number_of_bytes].to_vec());
+
+            match msg {
+                Ok(m) => {
+                    let trimmed = m.trim();
+                    let nodes_str = format!("{:?}", &self.nodes.values());
+                    let reply = match trimmed.as_ref() {
+                        "ping" => "alive",
+                        "join" => nodes_str.as_ref(),
+                        _ => continue,
+                    };
+                    socket.send_to(reply.as_bytes(), src_addr);
+                }
+                Err(_) => continue,
+            };
+        }
     }
 }
