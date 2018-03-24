@@ -5,10 +5,12 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io::Result;
 use std::net::{SocketAddr, UdpSocket};
-use std::thread::{spawn, JoinHandle};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use std::thread::{sleep, spawn, JoinHandle};
 
 pub struct Guestlist {
-    config: Config,
+    config: Mutex<Config>,
     // A map where the key is the address <ip>:<port> and the value is a Node.
     nodes: HashMap<String, Node>,
 }
@@ -29,7 +31,7 @@ impl fmt::Display for Node {
 /// A Node's possible states.
 enum State {
     Alive,
-    Suspected
+    Suspected,
 }
 
 impl fmt::Display for State {
@@ -50,27 +52,36 @@ impl fmt::Debug for State {
 impl Guestlist {
     pub fn with_config(config: Config) -> Guestlist {
         Guestlist {
-            config: config,
+            config: Mutex::new(config),
             nodes: HashMap::new(),
         }
     }
 
     pub fn start(self) -> Result<JoinHandle<()>> {
-        let addr = format!("{}", self.config.address);
+        let addr = format!("{}", self.config.lock().unwrap().address);
         let socket = UdpSocket::bind(&addr)?;
+
+        let this = Arc::new(self);
+        let this_server = Arc::clone(&this);
+
+        spawn(move || loop {
+            this.ping();
+            let config = this.config.lock().unwrap();
+            sleep(Duration::from_millis(config.detection_period_ms));
+        });
 
         let handle = spawn(move || {
             let mut buf = [0; 1000];
 
             loop {
-                let (number_of_bytes, src_addr) =
+                let (number_of_bytes, src_addr) = 
                     socket.recv_from(&mut buf).expect("Didn't receive data");
                 let msg = String::from_utf8(buf[0..number_of_bytes].to_vec());
 
                 match msg {
                     Ok(m) => {
                         let trimmed = m.trim();
-                        let nodes_str = format!("{:?}", &self.nodes.values());
+                        let nodes_str = format!("{:?}", &this_server.nodes.values());
                         let reply = match trimmed.as_ref() {
                             "ping" => "alive",
                             "join" => nodes_str.as_ref(),
@@ -83,5 +94,9 @@ impl Guestlist {
             }
         });
         return Ok(handle);
+    }
+
+    fn ping(&self) {
+        println!("ping")
     }
 }
