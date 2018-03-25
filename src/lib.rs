@@ -66,12 +66,12 @@ impl Guestlist {
 
     /// Starts the UDP server so other nodes can ping the one running it or join the cluster.
     pub fn start(self) -> Result<JoinHandle<()>> {
-        let addr = format!("{}", self.config.address);
-        let socket = UdpSocket::bind(&addr)?;
+        let socket = UdpSocket::bind(&self.config.address)?;
 
         let this = Arc::new(self);
         let this_server = Arc::clone(&this);
 
+        // TODO: Figure out what to do with in-thread errors.
         spawn(move || this.schedule_pings());
 
         let handle = spawn(move || this_server.run_server(socket));
@@ -87,6 +87,11 @@ impl Guestlist {
                 let i = rng.gen_range(0, nodes_length - 1);
                 // FIXME: It would be more time-efficient to have a Vec<Node> instead for O(1) access.
                 let node = nodes.values().nth(i).unwrap();
+                let this_ip = &self.config.address.ip();
+                // Bind on port 0 to get a random unused port.
+                let addr = format!("{}:0", this_ip);
+                let socket = UdpSocket::bind(&addr).unwrap();
+                socket.send_to("ping".as_bytes(), &node.address);
                 println!("pinging {}", node);
             }
             sleep(Duration::from_millis(self.config.detection_period_ms));
