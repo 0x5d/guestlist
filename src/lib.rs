@@ -9,8 +9,7 @@ use std::fmt;
 use std::io::Result;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use std::thread::{sleep, spawn, JoinHandle};
+use std::thread::{Builder, sleep, JoinHandle};
 
 /// A Guestlist
 pub struct Guestlist {
@@ -72,10 +71,14 @@ impl Guestlist {
         let this_server = Arc::clone(&this);
 
         // TODO: Figure out what to do with in-thread errors.
-        spawn(move || this.schedule_pings());
+        Builder::new()
+            .name("ping_scheduler".to_owned())
+            .spawn(move || this.schedule_pings());
 
-        let handle = spawn(move || this_server.run_server(socket));
-        return Ok(handle);
+        let result = Builder::new()
+            .name("server".to_owned())
+            .spawn(move || this_server.run_server(socket));
+        return result;
     }
 
     fn schedule_pings(&self) {
@@ -86,18 +89,24 @@ impl Guestlist {
                 let nodes_length = nodes.len();
                 if nodes_length > 0 {
                     let mut rng = thread_rng();
-                    let i = rng.gen_range(0, nodes_length - 1);
+                    let i = if nodes_length == 1 {
+                        0
+                    } else {
+                        rng.gen_range(0, nodes_length - 1)
+                    };
                     // FIXME: It would be more time-efficient to have a Vec<Node> instead for O(1) access.
                     let node = nodes.values().nth(i).unwrap();
                     let this_ip = &self.config.address.ip();
                     // Bind on port 0 to get a random unused port.
                     let addr = format!("{}:0", this_ip);
                     let socket = UdpSocket::bind(&addr).unwrap();
+                    socket.set_write_timeout(Some(self.config.detection_ping_timeout));
+                    socket.set_read_timeout(Some(self.config.detection_ping_timeout));
                     socket.send_to("ping".as_bytes(), &node.address);
                     println!("pinging {}", node);
                 }
             }
-            sleep(Duration::from_millis(self.config.detection_period_ms));
+            sleep(self.config.detection_period);
         }
     }
 
@@ -112,14 +121,13 @@ impl Guestlist {
             match msg {
                 Ok(m) => {
                     let trimmed = m.trim();
-                    println!("Loopin'");
-                    let nodes_str = format!("{:?}", &self.nodes.lock().unwrap().values());
+                    let nodes_str = format!("{:?}\n", &self.nodes.lock().unwrap().values());
                     let reply = match trimmed.as_ref() {
-                        "ping" => "alive",
+                        "ping" => "alive\n",
                         "join" => nodes_str.as_ref(),
                         _ => continue,
                     };
-                    socket.send_to(reply. .as_bytes(), src_addr);
+                    socket.send_to(reply.as_bytes(), src_addr);
                 }
                 Err(_) => continue,
             };
