@@ -12,11 +12,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread::{sleep, spawn, JoinHandle};
 
-/// A Guestlist 
+/// A Guestlist
 pub struct Guestlist {
     /// This Guestlist instance's config.
     config: Config,
     /// A map where the key is the address <ip>:<port> and the value is a Node.
+    // FIXME: Maybe a RwLock suits the use case better.
     nodes: Mutex<HashMap<String, Node>>,
 }
 
@@ -55,7 +56,6 @@ impl fmt::Debug for State {
 }
 
 impl Guestlist {
-
     /// Creates a Guestlist instance with the provided configuration.
     pub fn with_config(config: Config) -> Guestlist {
         Guestlist {
@@ -80,19 +80,22 @@ impl Guestlist {
 
     fn schedule_pings(&self) {
         loop {
-            let nodes = self.nodes.lock().unwrap();
-            let nodes_length = nodes.len();
-            if nodes_length > 0 {
-                let mut rng = thread_rng();
-                let i = rng.gen_range(0, nodes_length - 1);
-                // FIXME: It would be more time-efficient to have a Vec<Node> instead for O(1) access.
-                let node = nodes.values().nth(i).unwrap();
-                let this_ip = &self.config.address.ip();
-                // Bind on port 0 to get a random unused port.
-                let addr = format!("{}:0", this_ip);
-                let socket = UdpSocket::bind(&addr).unwrap();
-                socket.send_to("ping".as_bytes(), &node.address);
-                println!("pinging {}", node);
+            // We create a block to drop the lock on the nodes map before putting the thread to sleep.
+            {
+                let nodes = self.nodes.lock().unwrap();
+                let nodes_length = nodes.len();
+                if nodes_length > 0 {
+                    let mut rng = thread_rng();
+                    let i = rng.gen_range(0, nodes_length - 1);
+                    // FIXME: It would be more time-efficient to have a Vec<Node> instead for O(1) access.
+                    let node = nodes.values().nth(i).unwrap();
+                    let this_ip = &self.config.address.ip();
+                    // Bind on port 0 to get a random unused port.
+                    let addr = format!("{}:0", this_ip);
+                    let socket = UdpSocket::bind(&addr).unwrap();
+                    socket.send_to("ping".as_bytes(), &node.address);
+                    println!("pinging {}", node);
+                }
             }
             sleep(Duration::from_millis(self.config.detection_period_ms));
         }
@@ -109,13 +112,14 @@ impl Guestlist {
             match msg {
                 Ok(m) => {
                     let trimmed = m.trim();
+                    println!("Loopin'");
                     let nodes_str = format!("{:?}", &self.nodes.lock().unwrap().values());
                     let reply = match trimmed.as_ref() {
                         "ping" => "alive",
                         "join" => nodes_str.as_ref(),
                         _ => continue,
                     };
-                    socket.send_to(reply.as_bytes(), src_addr);
+                    socket.send_to(reply. .as_bytes(), src_addr);
                 }
                 Err(_) => continue,
             };
