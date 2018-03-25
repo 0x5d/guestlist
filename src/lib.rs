@@ -1,6 +1,9 @@
 mod config;
 
+extern crate rand;
+
 pub use config::Config;
+use rand::{thread_rng, Rng};
 use std::collections::HashMap;
 use std::fmt;
 use std::io::Result;
@@ -9,10 +12,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread::{sleep, spawn, JoinHandle};
 
+/// A Guestlist 
 pub struct Guestlist {
-    config: Mutex<Config>,
-    // A map where the key is the address <ip>:<port> and the value is a Node.
-    nodes: HashMap<String, Node>,
+    /// This Guestlist instance's config.
+    config: Config,
+    /// A map where the key is the address <ip>:<port> and the value is a Node.
+    nodes: Mutex<HashMap<String, Node>>,
 }
 
 /// Represents a Node in the cluster.
@@ -50,15 +55,18 @@ impl fmt::Debug for State {
 }
 
 impl Guestlist {
+
+    /// Creates a Guestlist instance with the provided configuration.
     pub fn with_config(config: Config) -> Guestlist {
         Guestlist {
-            config: Mutex::new(config),
-            nodes: HashMap::new(),
+            config: config,
+            nodes: Mutex::new(HashMap::new()),
         }
     }
 
+    /// Starts the UDP server so other nodes can ping the one running it or join the cluster.
     pub fn start(self) -> Result<JoinHandle<()>> {
-        let addr = format!("{}", self.config.lock().unwrap().address);
+        let addr = format!("{}", self.config.address);
         let socket = UdpSocket::bind(&addr)?;
 
         let this = Arc::new(self);
@@ -72,9 +80,16 @@ impl Guestlist {
 
     fn schedule_pings(&self) {
         loop {
-            println!("ping");
-            let config = self.config.lock().unwrap();
-            sleep(Duration::from_millis(config.detection_period_ms));
+            let nodes = self.nodes.lock().unwrap();
+            let nodes_length = nodes.len();
+            if nodes_length > 0 {
+                let mut rng = thread_rng();
+                let i = rng.gen_range(0, nodes_length - 1);
+                // FIXME: It would be more time-efficient to have a Vec<Node> instead for O(1) access.
+                let node = nodes.values().nth(i).unwrap();
+                println!("pinging {}", node);
+            }
+            sleep(Duration::from_millis(self.config.detection_period_ms));
         }
     }
 
@@ -82,14 +97,14 @@ impl Guestlist {
         let mut buf = [0; 1000];
 
         loop {
-            let (number_of_bytes, src_addr) = 
+            let (number_of_bytes, src_addr) =
                 socket.recv_from(&mut buf).expect("Didn't receive data");
             let msg = String::from_utf8(buf[0..number_of_bytes].to_vec());
 
             match msg {
                 Ok(m) => {
                     let trimmed = m.trim();
-                    let nodes_str = format!("{:?}", &self.nodes.values());
+                    let nodes_str = format!("{:?}", &self.nodes.lock().unwrap().values());
                     let reply = match trimmed.as_ref() {
                         "ping" => "alive",
                         "join" => nodes_str.as_ref(),
