@@ -1,9 +1,18 @@
 mod config;
+mod messages;
 
 extern crate rand;
+extern crate rmp_serde;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 
 pub use config::Config;
+use messages::Message;
+use messages::Message::{Ack, Join, Ping};
 use rand::{thread_rng, Rng};
+use rmp_serde::{Deserializer, Serializer};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::io::Result;
@@ -65,6 +74,7 @@ impl Guestlist {
 
     /// Starts the UDP server so other nodes can ping the one running it or join the cluster.
     pub fn start(self) -> Result<JoinHandle<()>> {
+        // FIXME: set a read timeout for this socket.
         let socket = UdpSocket::bind(&self.config.address)?;
 
         let this = Arc::new(self);
@@ -96,13 +106,17 @@ impl Guestlist {
                     };
                     // FIXME: It would be more time-efficient to have a Vec<Node> instead for O(1) access.
                     let node = nodes.values().nth(i).unwrap();
-                    let this_ip = &self.config.address.ip();
+                    let this_addr = &self.config.address;
+                    let this_ip = this_addr.ip();
+                    let ping_msg = Ping { from: *this_addr };
+                    let mut buf = Vec::new();
+                    ping_msg.serialize(&mut Serializer::new(&mut buf)).unwrap();
                     // Bind on port 0 to get a random unused port.
                     let addr = format!("{}:0", this_ip);
                     let socket = UdpSocket::bind(&addr).unwrap();
                     socket.set_write_timeout(Some(self.config.detection_ping_timeout));
                     socket.set_read_timeout(Some(self.config.detection_ping_timeout));
-                    socket.send_to("ping".as_bytes(), &node.address);
+                    socket.send_to(&buf, &node.address);
                     println!("pinging {}", node);
                 }
             }
@@ -114,23 +128,20 @@ impl Guestlist {
         let mut buf = [0; 1000];
 
         loop {
-            let (number_of_bytes, src_addr) =
-                socket.recv_from(&mut buf).expect("Didn't receive data");
-            let msg = String::from_utf8(buf[0..number_of_bytes].to_vec());
+            let (number_of_bytes, src_addr) = socket.recv_from(&mut buf).expect("Didn't receive data");
+            let mut deserializer = Deserializer::new(&buf[0..number_of_bytes]);
+            let msg: Message = Deserialize::deserialize(&mut deserializer).unwrap();
 
-            match msg {
-                Ok(m) => {
-                    let trimmed = m.trim();
-                    let nodes_str = format!("{:?}\n", &self.nodes.lock().unwrap().values());
-                    let reply = match trimmed.as_ref() {
-                        "ping" => "alive\n",
-                        "join" => nodes_str.as_ref(),
-                        _ => continue,
-                    };
-                    socket.send_to(reply.as_bytes(), src_addr);
-                }
-                Err(_) => continue,
+            let mut reply_buf = Vec::new();
+            let reply_msg = Ack { from: self.config.address };
+            reply_msg.serialize(&mut Serializer::new(&mut reply_buf)).unwrap();
+
+            let reply = match msg {
+                Ping { from } => reply_msg,   
+                Join { from } => reply_msg,
+                _ => continue,
             };
+            socket.send_to(&reply_buf, src_addr);
         }
     }
 }
