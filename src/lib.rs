@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io::Result;
 use std::net::{SocketAddr, UdpSocket};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::thread::{Builder, sleep, JoinHandle};
 
 /// A Guestlist
@@ -25,8 +25,7 @@ pub struct Guestlist {
     /// This Guestlist instance's config.
     config: Config,
     /// A map where the key is the address <ip>:<port> and the value is a Node.
-    // FIXME: Maybe a RwLock suits the use case better.
-    nodes: Mutex<HashMap<String, Node>>,
+    nodes: RwLock<HashMap<String, Node>>,
 }
 
 /// Represents a Node in the cluster.
@@ -68,7 +67,7 @@ impl Guestlist {
     pub fn with_config(config: Config) -> Guestlist {
         Guestlist {
             config: config,
-            nodes: Mutex::new(HashMap::new()),
+            nodes: RwLock::new(HashMap::new()),
         }
     }
 
@@ -95,7 +94,7 @@ impl Guestlist {
         loop {
             // We create a block to drop the lock on the nodes map before putting the thread to sleep.
             {
-                let nodes = self.nodes.lock().unwrap();
+                let nodes = self.nodes.read().unwrap();
                 let nodes_length = nodes.len();
                 if nodes_length > 0 {
                     let mut rng = thread_rng();
