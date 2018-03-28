@@ -2,6 +2,7 @@ extern crate guestlist;
 
 use guestlist::*;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
 fn main() {
@@ -11,9 +12,10 @@ fn main() {
         detection_ping_timeout: Duration::from_millis(1000),
         detection_group_size: 2,
     };
-    let g = Guestlist::with_config(config);
-    match g.start() {
-        Err(_) => return,
-        Ok(handle) => handle.join(),
-    };
+    let g = Arc::new(Guestlist::with_config(config));
+    let handles = Guestlist::start(g).unwrap_or_else(|_| panic!("Error"));
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
 }

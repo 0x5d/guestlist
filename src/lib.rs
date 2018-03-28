@@ -72,22 +72,23 @@ impl Guestlist {
     }
 
     /// Starts the UDP server so other nodes can ping the one running it or join the cluster.
-    pub fn start(self) -> Result<JoinHandle<()>> {
+    pub fn start(guestlist: Arc<Self>) -> Result<Vec<JoinHandle<()>>> {
         // FIXME: set a read timeout for this socket.
-        let socket = UdpSocket::bind(&self.config.address)?;
+        let socket = UdpSocket::bind(&guestlist.config.address)?;
 
-        let this = Arc::new(self);
-        let this_server = Arc::clone(&this);
+        let self1 = guestlist.clone();
+        let self2 = self1.clone();
 
         // TODO: Figure out what to do with in-thread errors.
-        Builder::new()
+        let ping_handle = Builder::new()
             .name("ping_scheduler".to_owned())
-            .spawn(move || this.schedule_pings());
+            .spawn(move || self1.schedule_pings())?;
 
-        let result = Builder::new()
+        let server_handle = Builder::new()
             .name("server".to_owned())
-            .spawn(move || this_server.run_server(socket));
-        return result;
+            .spawn(move || self2.run_server(socket))?;
+
+        Ok(vec![ping_handle, server_handle])
     }
 
     fn schedule_pings(&self) {
