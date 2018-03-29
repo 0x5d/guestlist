@@ -96,7 +96,7 @@ impl Guestlist {
         join_msg.serialize(&mut Serializer::new(&mut buf)).unwrap();
         let addr = format!("{}:0", self.config.address.ip());
         let socket = UdpSocket::bind(&addr)?;
-        socket.set_write_timeout(Some(self.config.detection_ping_timeout));
+        socket.set_write_timeout(Some(self.config.timeout));
         socket.send_to(&buf, address).map(|_| ())
     }
 
@@ -121,8 +121,8 @@ impl Guestlist {
                     // Bind on port 0 to get a random unused port.
                     let addr = format!("{}:0", self.config.address.ip());
                     let socket = UdpSocket::bind(&addr).unwrap();
-                    socket.set_write_timeout(Some(self.config.detection_ping_timeout)).unwrap();
-                    socket.set_read_timeout(Some(self.config.detection_ping_timeout)).unwrap();
+                    socket.set_write_timeout(Some(self.config.timeout)).unwrap();
+                    socket.set_read_timeout(Some(self.config.timeout)).unwrap();
                     socket.send_to(&buf, &node.address).unwrap();
                     println!("pinging {}", node);
                 }
@@ -134,7 +134,7 @@ impl Guestlist {
     fn run_server(&self) {
         // FIXME: set a read timeout for this socket.
         let socket = UdpSocket::bind(self.config.address).unwrap();
-        socket.set_write_timeout(Some(self.config.detection_ping_timeout)).unwrap();
+        socket.set_write_timeout(Some(self.config.timeout)).unwrap();
         let mut buf = [0; 1000];
 
         loop {
