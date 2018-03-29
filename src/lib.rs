@@ -1,5 +1,6 @@
 mod config;
-mod messages;
+pub mod error;
+mod message;
 
 extern crate rand;
 extern crate rmp_serde;
@@ -8,17 +9,19 @@ extern crate serde;
 extern crate serde_derive;
 
 pub use config::Config;
-use messages::Message;
-use messages::Message::{Ack, Join, Ping};
+use error::GuestlistError;
+use message::Message;
+use message::Message::{Ack, Join, Ping};
 use rand::{thread_rng, Rng};
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt;
-use std::io;
+use std::{fmt, io};
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, RwLock};
 use std::thread::{Builder, sleep, JoinHandle};
+
+type GuestlistResult<T> = Result<T, GuestlistError>;
 
 /// A Guestlist
 pub struct Guestlist {
@@ -72,7 +75,7 @@ impl Guestlist {
     }
 
     /// Starts the UDP server so other nodes can ping the one running it or join the cluster.
-    pub fn start(guestlist: Arc<Self>) -> io::Result<Vec<JoinHandle<()>>> {
+    pub fn start(guestlist: Arc<Self>) -> GuestlistResult<Vec<JoinHandle<()>>> {
         let self1 = guestlist.clone();
         let self2 = self1.clone();
 
