@@ -157,4 +157,16 @@ impl Guestlist {
             socket.send_to(&reply_buf, src_addr).unwrap();
         }
     }
+
+    fn add_node(&self, address: SocketAddr) -> GuestlistResult<()> {
+        let node = Node {
+            address: address,
+            state: State::Alive
+        };
+        let mut  ns = self.nodes.write()?;
+        let address_str = address.to_string();
+        let n = ns.entry(address_str).or_insert(node);
+        n.state = State::Alive;
+        Ok(())
+    }
 }
