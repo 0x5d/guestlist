@@ -16,7 +16,6 @@ use rand::{thread_rng, Rng};
 use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, RwLock};
 use std::thread::{Builder, sleep, JoinHandle};
@@ -57,7 +56,7 @@ impl Guestlist {
         Ok(vec![ping_handle, server_handle])
     }
 
-    pub fn join(&self, address: SocketAddr) -> io::Result<()> {
+    pub fn join(&self, address: SocketAddr) -> GuestlistResult<()> {
         let join_msg = Join { from: self.config.address };
         let mut buf = Vec::new();
         // FIXME: Figure out what to do with an error while serializing, as this produces a serde
@@ -65,8 +64,9 @@ impl Guestlist {
         join_msg.serialize(&mut Serializer::new(&mut buf)).unwrap();
         let addr = format!("{}:0", self.config.address.ip());
         let socket = UdpSocket::bind(&addr)?;
-        socket.set_write_timeout(Some(self.config.timeout));
-        socket.send_to(&buf, address).map(|_| ())
+        socket.set_write_timeout(Some(self.config.timeout))?;
+        socket.send_to(&buf, address).map(|_| ())?;
+        Ok(())
     }
 
     fn schedule_pings(&self) {
