@@ -15,7 +15,7 @@ use rmp_serde::{Deserializer, Serializer};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
-use std::io::Result;
+use std::io;
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::{Arc, RwLock};
 use std::thread::{Builder, sleep, JoinHandle};
@@ -72,7 +72,7 @@ impl Guestlist {
     }
 
     /// Starts the UDP server so other nodes can ping the one running it or join the cluster.
-    pub fn start(guestlist: Arc<Self>) -> Result<Vec<JoinHandle<()>>> {
+    pub fn start(guestlist: Arc<Self>) -> io::Result<Vec<JoinHandle<()>>> {
         let self1 = guestlist.clone();
         let self2 = self1.clone();
 
@@ -88,8 +88,16 @@ impl Guestlist {
         Ok(vec![ping_handle, server_handle])
     }
 
-    pub fn join(&self) {
-
+    pub fn join(&self, address: SocketAddr) -> io::Result<()> {
+        let join_msg = Join { from: self.config.address };
+        let mut buf = Vec::new();
+        // FIXME: Figure out what to do with an error while serializing, as this produces a serde
+        // error and not an io::Error. Check https://doc.rust-lang.org/std/convert/trait.From.html
+        join_msg.serialize(&mut Serializer::new(&mut buf)).unwrap();
+        let addr = format!("{}:0", self.config.address.ip());
+        let socket = UdpSocket::bind(&addr)?;
+        socket.set_write_timeout(Some(self.config.detection_ping_timeout));
+        socket.send_to(&buf, address).map(|_| ())
     }
 
     fn schedule_pings(&self) {
@@ -107,13 +115,11 @@ impl Guestlist {
                     };
                     // FIXME: It would be more time-efficient to have a Vec<Node> instead for O(1) access.
                     let node = nodes.values().nth(i).unwrap();
-                    let this_addr = &self.config.address;
-                    let this_ip = this_addr.ip();
-                    let ping_msg = Ping { from: *this_addr };
+                    let ping_msg = Ping { from: self.config.address };
                     let mut buf = Vec::new();
                     ping_msg.serialize(&mut Serializer::new(&mut buf)).unwrap();
                     // Bind on port 0 to get a random unused port.
-                    let addr = format!("{}:0", this_ip);
+                    let addr = format!("{}:0", self.config.address.ip());
                     let socket = UdpSocket::bind(&addr).unwrap();
                     socket.set_write_timeout(Some(self.config.detection_ping_timeout)).unwrap();
                     socket.set_read_timeout(Some(self.config.detection_ping_timeout)).unwrap();
@@ -127,7 +133,7 @@ impl Guestlist {
 
     fn run_server(&self) {
         // FIXME: set a read timeout for this socket.
-        let socket = UdpSocket::bind(&self.config.address).unwrap();
+        let socket = UdpSocket::bind(self.config.address).unwrap();
         socket.set_write_timeout(Some(self.config.detection_ping_timeout)).unwrap();
         let mut buf = [0; 1000];
 
