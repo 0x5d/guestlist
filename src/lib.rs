@@ -73,9 +73,6 @@ impl Guestlist {
 
     /// Starts the UDP server so other nodes can ping the one running it or join the cluster.
     pub fn start(guestlist: Arc<Self>) -> Result<Vec<JoinHandle<()>>> {
-        // FIXME: set a read timeout for this socket.
-        let socket = UdpSocket::bind(&guestlist.config.address)?;
-
         let self1 = guestlist.clone();
         let self2 = self1.clone();
 
@@ -86,9 +83,13 @@ impl Guestlist {
 
         let server_handle = Builder::new()
             .name("server".to_owned())
-            .spawn(move || self2.run_server(socket))?;
+            .spawn(move || self2.run_server())?;
 
         Ok(vec![ping_handle, server_handle])
+    }
+
+    pub fn join(&self) {
+
     }
 
     fn schedule_pings(&self) {
@@ -114,9 +115,9 @@ impl Guestlist {
                     // Bind on port 0 to get a random unused port.
                     let addr = format!("{}:0", this_ip);
                     let socket = UdpSocket::bind(&addr).unwrap();
-                    socket.set_write_timeout(Some(self.config.detection_ping_timeout));
-                    socket.set_read_timeout(Some(self.config.detection_ping_timeout));
-                    socket.send_to(&buf, &node.address);
+                    socket.set_write_timeout(Some(self.config.detection_ping_timeout)).unwrap();
+                    socket.set_read_timeout(Some(self.config.detection_ping_timeout)).unwrap();
+                    socket.send_to(&buf, &node.address).unwrap();
                     println!("pinging {}", node);
                 }
             }
@@ -124,7 +125,10 @@ impl Guestlist {
         }
     }
 
-    fn run_server(&self, socket: UdpSocket) {
+    fn run_server(&self) {
+        // FIXME: set a read timeout for this socket.
+        let socket = UdpSocket::bind(&self.config.address).unwrap();
+        socket.set_write_timeout(Some(self.config.detection_ping_timeout)).unwrap();
         let mut buf = [0; 1000];
 
         loop {
@@ -141,7 +145,7 @@ impl Guestlist {
                 Join { from } => reply_msg,
                 _ => continue,
             };
-            socket.send_to(&reply_buf, src_addr);
+            socket.send_to(&reply_buf, src_addr).unwrap();
         }
     }
 }
