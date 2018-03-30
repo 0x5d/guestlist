@@ -57,21 +57,13 @@ impl Guestlist {
     }
 
     pub fn join(&self, address: SocketAddr) -> GuestlistResult<()> {
-        let join_msg = Join { from: self.config.address };
-        let mut buf = Vec::new();
-        // FIXME: Figure out what to do with an error while serializing, as this produces a serde
-        // error and not an io::Error. Check https://doc.rust-lang.org/std/convert/trait.From.html
-        join_msg.serialize(&mut Serializer::new(&mut buf)).unwrap();
-        let addr = format!("{}:0", self.config.address.ip());
-        let socket = UdpSocket::bind(&addr)?;
-        socket.set_write_timeout(Some(self.config.timeout))?;
-        socket.send_to(&buf, address).map(|_| ())?;
-        Ok(())
+        let msg = Join { from: self.config.address };
+        self.send_message(msg, address)
     }
 
     fn schedule_pings(&self) {
         loop {
-            // We create a block to drop the lock on the nodes map before putting the thread to sleep.
+            // We create a block to drop the read lock on the nodes map before putting the thread to sleep.
             {
                 let nodes = self.nodes.read().unwrap();
                 let nodes_length = nodes.len();
@@ -84,15 +76,7 @@ impl Guestlist {
                     };
                     // FIXME: It would be more time-efficient to have a Vec<Node> instead for O(1) access.
                     let node = nodes.values().nth(i).unwrap();
-                    let ping_msg = Ping { from: self.config.address };
-                    let mut buf = Vec::new();
-                    ping_msg.serialize(&mut Serializer::new(&mut buf)).unwrap();
-                    // Bind on port 0 to get a random unused port.
-                    let addr = format!("{}:0", self.config.address.ip());
-                    let socket = UdpSocket::bind(&addr).unwrap();
-                    socket.set_write_timeout(Some(self.config.timeout)).unwrap();
-                    socket.set_read_timeout(Some(self.config.timeout)).unwrap();
-                    socket.send_to(&buf, &node.address).unwrap();
+                    self.send_ping(node.address).unwrap();
                     println!("pinging {}", node);
                 }
             }
@@ -101,7 +85,6 @@ impl Guestlist {
     }
 
     fn run_server(&self) {
-        // FIXME: set a read timeout for this socket.
         let socket = UdpSocket::bind(self.config.address).unwrap();
         socket.set_write_timeout(Some(self.config.timeout)).unwrap();
         let mut buf = [0; 1000];
@@ -111,16 +94,11 @@ impl Guestlist {
             let mut deserializer = Deserializer::new(&buf[0..number_of_bytes]);
             let msg: Message = Deserialize::deserialize(&mut deserializer).unwrap();
 
-            let mut reply_buf = Vec::new();
-            let reply_msg = Ack { from: self.config.address };
-            reply_msg.serialize(&mut Serializer::new(&mut reply_buf)).unwrap();
-
-            let reply = match msg {
-                Ping { from } => reply_msg,   
-                Join { from } => reply_msg,
+            match msg {
+                Ping { from } => self.send_ack(src_addr),
+                Join { from } => self.add_node(from),
                 _ => continue,
             };
-            socket.send_to(&reply_buf, src_addr).unwrap();
         }
     }
 
@@ -129,10 +107,31 @@ impl Guestlist {
             address: address,
             state: State::Alive
         };
-        let mut  ns = self.nodes.write()?;
+        let mut ns = self.nodes.write()?;
         let address_str = address.to_string();
         let n = ns.entry(address_str).or_insert(node);
         n.state = State::Alive;
+        Ok(())
+    }
+
+    fn send_ping(&self, address: SocketAddr) -> GuestlistResult<()> {
+        let msg = Ping { from: self.config.address };
+        self.send_message(msg, address)
+    }
+
+    fn send_ack(&self, address: SocketAddr) -> GuestlistResult<()> {
+        let msg = Ack { from: self.config.address };
+        self.send_message(msg, address)
+    }
+
+    fn send_message(&self, msg: Message, address: SocketAddr) -> GuestlistResult<()> {
+        let mut buf = Vec::new();
+        msg.serialize(&mut Serializer::new(&mut buf)).unwrap();
+        // Bind on port 0 to get a random unused port.
+        let addr = format!("{}:0", self.config.address.ip());
+        let socket = UdpSocket::bind(&addr)?;
+        socket.set_write_timeout(Some(self.config.timeout))?;
+        socket.send_to(&buf, address).map(|_| ())?;
         Ok(())
     }
 }
